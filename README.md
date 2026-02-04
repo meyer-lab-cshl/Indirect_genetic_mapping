@@ -1,1 +1,4 @@
-# Indirect_genetic_mapping
+# Indirect genetic mapping
+
+Repository for the indirect genetic association mapping project.
+
