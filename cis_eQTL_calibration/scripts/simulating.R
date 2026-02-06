@@ -116,20 +116,26 @@ write.table(samplemap, file = paste0(outputdir,"/bulksim_sample_map.txt"),
             quote = FALSE, row.names = FALSE, sep = "\t", col.names = FALSE)
 
 #for genetics files
-sys_com <- paste0(path2plink, " --vcf ", vcf_name, " --make-bed --out ", outputdir, "/geno")
+temporary <- tempdir()
+writeVcf(vcf_obj, filename = paste(temporary, vcf_name, sep = "/"), 
+         index = TRUE) 
+
+sys_com <- paste0(path2plink, " --vcf ", temporary, "/", vcf_name, 
+                  " --make-bed --out ", outputdir, "/geno")
 system(sys_com)
 
 ##kinship file
 kin_mat <- read.table(kin_mat_name)
-kin_ids <- read.table(kid_ids_name)
+kin_ids <- read.table(kid_ids_name, header = TRUE,
+                      col.names = c("FID", "IID"))
 
 double_kin_mat <- kin_mat * 2
 
-colnames(double_kin_mat) <- kin_ids$V1
-cbind("sample_id" = kin_ids$V1,
+colnames(double_kin_mat) <- kin_ids$IID
+cbind("sample_id" = kin_ids$IID,
       double_kin_mat)
 
-write.table(double_kin_mat, file = paste0(outputdir,"kinship.txt"),
+write.table(double_kin_mat, file = paste0(outputdir,"/kinship.txt"),
             quote = FALSE, sep = "\t", row.names = FALSE,
             col.names = TRUE)
 
