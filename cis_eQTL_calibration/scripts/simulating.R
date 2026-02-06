@@ -43,7 +43,7 @@ gff <- read.table(opt$gff, sep = "\t")
 eqtl_params <- readRDS(opt$eqtl_params)
 set.seed(opt$rand)
 
-path2plink <- "plink"
+path2plink <- "plink2"
 path2ancids <- "../RESHAPE_geno_sim/ids/"
 outputdir <- paste0("intermed_data/", "sim_geno", as.character(effect_size),"_sample",
   as.character(samp_n), "_cell", as.character(cell_count), "_rep",
@@ -100,7 +100,7 @@ pheno_dataframe <- cbind(data.frame("feature_id" = rownames(pseudobulk)),
                          data.frame(assay(pseudobulk)))
 
 write.table(pheno_dataframe, file = paste0(outputdir, "/sim_phenotype.txt"),
-            quote = FALSE, sep = "\t", row.names = FALSE, col.names = FALSE)
+            quote = FALSE, sep = "\t", row.names = FALSE, col.names = TRUE)
 
 #covariate file
 #determining PC
@@ -112,23 +112,14 @@ sample_names <- colnames(pseudobulk)
 samplemap <- data.frame(geno_names = sample_names,
                         pheno_names = sample_names)
 
-write.table(samplemap, file = outputdir+"/bulksim_sample_map.txt",
+write.table(samplemap, file = paste0(outputdir,"/bulksim_sample_map.txt"),
             quote = FALSE, row.names = FALSE, sep = "\t", col.names = FALSE)
 
 #for genetics files
 sys_com <- paste0(path2plink, " --vcf ", vcf_name, " --make-bed --out ", outputdir, "/geno")
 system(sys_com)
 
-###feature annotation file 
-feature_anot <- data.frame("feature_id" = sprintf("gene_%04d", 1:nrow(gff_gene)),
-                           "chromosome" = gff$V3,
-                           "start" = gff$V4,
-                           "end" = gff$V5)
-write.table(feature_anot, file = paste0(outputdir,"annot.txt"),
-            quote = FALSE, row.names = FALSE, sep = "\t")
-
 ##kinship file
-
 kin_mat <- read.table(kin_mat_name)
 kin_ids <- read.table(kid_ids_name)
 
@@ -158,11 +149,11 @@ csa_samples <- read.table(paste0(path2ancids, "csa_ids.txt"))
 eas_samples <- read.table(paste0(path2ancids,"eas_ids.txt"))
 eur_samples <- read.table(paste0(path2ancids,"eur_ids.txt"))
 
-afr_ancestry <- as.numeric(c(covar_named$sample_id %in% afr_samples))
-amr_ancestry <- as.numeric(c(covar_named$sample_id %in% amr_samples))
-csa_ancestry <- as.numeric(c(covar_named$sample_id %in% csa_samples))
-eas_ancestry <- as.numeric(c(covar_named$sample_id %in% eas_samples))
-eur_ancestry <- as.numeric(c(covar_named$sample_id %in% eur_samples))
+afr_ancestry <- as.numeric(c(covar_named$sample_id %in% afr_samples$V1))
+amr_ancestry <- as.numeric(c(covar_named$sample_id %in% amr_samples$V1))
+csa_ancestry <- as.numeric(c(covar_named$sample_id %in% csa_samples$V1))
+eas_ancestry <- as.numeric(c(covar_named$sample_id %in% eas_samples$V1))
+eur_ancestry <- as.numeric(c(covar_named$sample_id %in% eur_samples$V1))
 
 covar_file <- cbind(covar_named, 
                     "afr_ancestry" = afr_ancestry,
@@ -170,6 +161,6 @@ covar_file <- cbind(covar_named,
                     "csa_ancestry" = csa_ancestry,
                     "eas_ancestry" = eas_ancestry,
                     "eur_ancestry" = eur_ancestry)
-write.table(covar_file, file = paste0(outputdir,"covar.txt"),
+write.table(covar_file, file = paste0(outputdir,"/covar.txt"),
             quote = FALSE, sep = "\t", row.names = FALSE,
             col.names = TRUE)
