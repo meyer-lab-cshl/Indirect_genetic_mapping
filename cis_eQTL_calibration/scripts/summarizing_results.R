@@ -48,7 +48,6 @@ sig_results <- results[results$qval <= 0.05, ]
 sig_egenes <- unique(sig_results$feature_id)
 
 getter <- function(gene_name, esnp) {
-  #browser()
   if (gene_name %in% sig_egenes) { #seeing if the gene is signficant
     #so subsetting all the snps in the egene of choice
     sig_snps <- sig_results[sig_results$feature_id == gene_name]

@@ -7,13 +7,18 @@ from snakemake.io import glob_wildcards
 random.seed(522)
 
 effects = [0.75, 1, 1.25]
-samp_numbers = [75, 100] #removed 125
-cell_numbers = [50, 100, 500, 1000] #removing 1500, 250
+samp_numbers = [75, 25, 100] #removed 125
+cell_numbers = [50, 100, 250, 500, 1000] #removing 1500
 replicates = [1, 2, 3]
 
 ancestry = ["amr", "afr", "csa", "eas", "eur"]
-gff_file = "gencode.v49.annotation.chr2.gtf"
-eqtl_params ="params_smartseq_use.rds"
+
+#annotation file
+annot_file = "annot_chr2_onlygenesinrange.txt" 
+
+#gff file 
+gff_file = "gff_chr2_onlygenesinrange.txt"
+eqtl_params = "params_smartseq_use.rds"
 
 setup = pd.DataFrame(columns = ['effect_size', 'samp_n', 'cell_count', 'rep', 'rand_seed'])
 for effect in effects:
@@ -51,62 +56,39 @@ rule sample_ids:
 
 rule filter_samples:
     input:
-        sample_list = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/{anc}_sample_ids.txt",
-        eQTLgenome = "../RESHAPE_geno_sim/sim/sim_{anc}_chr2.vcf.gz",
-        kingenome = "../RESHAPE_geno_sim/sim/sim_{anc}_chr3.vcf.gz"
+        sample_list = lambda wc: expand(
+            "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/{anc}_sample_ids.txt",
+            anc=ancestry,
+            effect_size=wc.effect_size,
+            samp_n=wc.samp_n,
+            cell_count=wc.cell_count,
+            rep=wc.rep,
+            rand_seed=wc.rand_seed)
+        eQTLgenome = "../RESHAPE_geno_sim/sim/sim_chr2.vcf.gz",
+        kingenome = "../RESHAPE_geno_sim/sim/LOCO_kinship.vcf.gz"
     output:
-        eQTLchr = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/{anc}_genome_chr2.vcf.gz"),
-        kinchr = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/{anc}_genome_chr3.vcf.gz")
+        all_samples = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/allsample_list.txt)
+        eQTLchr = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/sim_chr2_samplefilter.vcf.gz"),
+        kinchr = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/LOCO_kinship_samplefilter.vcf.gz")
     resources:
         mem_mb = 10000
     threads: 4
     shell:
         """
-        bcftools view --threads {threads} -r chr2:1-125000000  -S {input.sample_list} {input.eQTLgenome} -Oz -o {output.eQTLchr}
+        cat {input.sample_list} > {output.all_samples}
+
+        bcftools view --threads {threads} -S {output.all_samples} {input.eQTLgenome} -Oz -o {output.eQTLchr}
         bcftools index -t {output.eQTLchr}
 
-        bcftools view --threads {threads} -r chr3:1-10000000 -S {input.sample_list} {input.kingenome} -Oz -o {output.kinchr}
+        bcftools view --threads {threads} -S {output.all_samples} {input.kingenome} -Oz -o {output.kinchr}
         bcftools index -t {output.kinchr}
-        """
-
-rule merge_genomes:
-    input: 
-        eqtlchr = lambda wc: expand(
-            "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/{anc}_genome_chr2.vcf.gz",
-            anc=ancestry,
-            effect_size=wc.effect_size,
-            samp_n=wc.samp_n,
-            cell_count=wc.cell_count,
-            rep=wc.rep,
-            rand_seed=wc.rand_seed),
-        kinchr = lambda wc: expand(
-            "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/{anc}_genome_chr3.vcf.gz",
-            anc=ancestry,
-            effect_size=wc.effect_size,
-            samp_n=wc.samp_n,
-            cell_count=wc.cell_count,
-            rep=wc.rep,
-            rand_seed=wc.rand_seed
-        )
-    output:
-        eqtlchr_merge = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/genome_chr2.vcf",
-        kinchr_merge = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/genome_chr3.vcf")
-    resources:
-        mem_mb = 20000
-    threads: 8
-    shell:
-        """
-        bcftools merge --threads {threads} {input.eqtlchr} -O v -o {output.eqtlchr_merge}
-        bcftools merge --threads {threads} {input.kinchr} -O v -o {output.kinchr_merge}
         """
 
 rule filter_qc_genomes:
     input:
-        eqtlchr_merge = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/genome_chr2.vcf",
-        kinchr_merge = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/genome_chr3.vcf"
+        eqtlchr = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/sim_chr2_samplefilter.vcf.gz",
     output:
-        eqtl_filter = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/filtered_genome_chr2.vcf.gz"),
-        kin_filter = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/filtered_genome_chr3.vcf.gz")
+        eqtl = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/sim_chr2_samplefilter_markerqc.vcf.gz"),
     resources:
         mem_mb = 10000
     threads: 4
@@ -114,14 +96,48 @@ rule filter_qc_genomes:
         """
         vcftools --vcf {input.eqtlchr_merge} --maf 0.05 --hwe 0.001 --max-missing 0.95 --recode --recode-INFO-all --stdout | bgzip -c > {output.eqtl_filter}
         tabix -p vcf {output.eqtl_filter}
-        vcftools --vcf {input.kinchr_merge} --maf 0.05 --hwe 0.001 --max-missing 0.95 --recode --recode-INFO-all --stdout | bgzip -c > {output.kin_filter}
-        tabix -p vcf {output.kin_filter}
+        """
+
+
+    sys_com <- paste0(path2plink, " --vcf ", vcf_chr3, " --make-bed --out ", outputdir, 
+        "/geno.chr3")
+system(sys_com)
+
+sys_com_filter <- paste0(path2plink, " --bfile ", outputdir, "/geno.chr3", 
+               " --maf 0.05 --hwe 1e-6 --make-bed --out ",  outputdir, "/geno.chr3.fil")
+sys_com_prune <- paste0(path2plink, " --bfile ", outputdir, "/geno.chr3.fil", 
+              " --indep-pairwise 250 50 0.2 --bad-ld --out ",  outputdir, "/geno.chr3.fil.pruned")
+sys_com_king <- paste0(path2plink, " --bfile ", outputdir, "/geno.chr3.fil", 
+             "  --extract ", outputdir, "/geno.chr3.fil.pruned.prune.in", 
+             "--make-king square --out ", outputdir, "/king_ibd")
+
+rule make_kinship:
+    input:
+        kinchr = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/LOCO_kinship_samplefilter.vcf.gz",
+    output:
+        kinmatrix = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/LOCO_kinship_samplefilter.king.id"),
+        plinks_bed = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/LOCO_kinship_samplefilter.bed")
+    params:
+        plink_name = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/LOCO_kinship_samplefilter"
+        kinship_name = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/LOCO_kinship"
+    resources:
+        mem_mb = 10000
+    threads: 4
+    shell:
+        """
+        plink2 --vcf {input.kinchr} --make-bed --out {params.plink_name}
+        plink2 --bfile {params.plink_name} --maf 0.05 --hwe 1e-6 --make-bed --out {params.plink_name}.filtered
+        plink2 --bfile {params.plink_name}.filtered --indep-pairwise 250 50 0.2 --bad-ld --out {params.plink_name}.filtered
+        plink2 --bfile {params.plink_name}.filtered --extract {params.plink_name}.filtered.prune.in --make-king square --out {params.kinship_name}
+
+        rm {params.plink_name}.bed {params.plink_name}.bim {params.plink_name}.fam 
+        rm {params.plink_name}.filtered.bed {params.plink_name}.filtered.bim {params.plink_name}.filtered.fam
         """
 
 rule sim_exp:
     input:
         sim_vcf = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/filtered_genome_chr2.vcf.gz",
-        vcf_for_kin = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/filtered_genome_chr3.vcf.gz"
+        kinship_file = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/filtered_genome_chr3.vcf.gz"
     output:
         pheno_file = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/pheno.txt"),
         covar = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/covar.txt"),
@@ -193,7 +209,7 @@ checkpoint setup_chunk_analysis:
 rule run_qtl_mapping:
     input:
         chunkinfo = "results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}" + "/chunks/{chunk}_info",
-        af = gff_file,
+        af = annot_file,
         pf = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/pheno.txt",
         cf = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/covar.txt",
         kf = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/kinship.txt",

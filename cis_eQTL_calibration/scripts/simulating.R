@@ -33,7 +33,8 @@ option_list <- list(
 opt <- parse_args(OptionParser(option_list=option_list))
 
 vcf_name <- opt$vcf
-vcf_chr3 <- opt$vcf_kin
+kin_mat_name <- opt$kinmat
+kin_ids_name <- opt$kinids
 effect_size <- opt$effect_size
 samp_n <- opt$samp_n
 cell_count <- opt$cell_count
@@ -63,16 +64,14 @@ eqtl_params <- setParams(eqtl_params,
 
 #need to read in vcf file 
 vcf <- readVcf(vcf_name, "hg38") 
-rownames(vcf) <- make.unique(rownames(vcf))
-
-gff_gene <- gff
-gff_gene <- gff_gene[,1:8]
-gff_gene <- gff_gene[gff_gene$V3=="gene",]
+#rownames(vcf) <- make.unique(rownames(vcf))
+vcf <- vcf[!duplicated(rowRanges(vcf)), ]
+vcf <- vcf[!duplicated(rownames(vcf)), ]
 
 #this makes the key 
 sim.means <- splatPopSimulateMeans(
   vcf = vcf,
-  gff = gff_gene,
+  gff = gff,
   params = eqtl_params
 )
 
@@ -116,17 +115,6 @@ samplemap <- data.frame(geno_names = sample_names,
 write.table(samplemap, file = outputdir+"/bulksim_sample_map.txt",
             quote = FALSE, row.names = FALSE, sep = "\t", col.names = FALSE)
 
-#file for genome annotations
-genomeanot <- gff_gene
-genomeanot$feature_id <- c(1:nrow(gff_gene)
-genomeanot <- genomeanot %>%
-  mutate(chromosome = "chr2") %>%
-  select(c(feature_id, chromosome, V4, V5))
-colnames(genomeanot) <- c("feature_id", "chromosome",
-                          "start", "end")
-write.table(genomeanot, file = paste0(outputdir, "annot.txt"),
-            quote = FALSE, row.names = FALSE, sep = "\t")
-
 #for genetics files
 sys_com <- paste0(path2plink, " --vcf ", vcf_name, " --make-bed --out ", outputdir, "/geno")
 system(sys_com)
@@ -140,32 +128,14 @@ write.table(feature_anot, file = paste0(outputdir,"annot.txt"),
             quote = FALSE, row.names = FALSE, sep = "\t")
 
 ##kinship file
-#for the kinship file
-sys_com <- paste0(path2plink, " --vcf ", vcf_chr3, " --make-bed --out ", outputdir, 
-                  "/geno.chr3")
-system(sys_com)
 
-sys_com_filter <- paste0(path2plink, " --bfile ", outputdir, "/geno.chr3", 
-                         " --maf 0.05 --hwe 1e-6 --make-bed --out ",  outputdir, "/geno.chr3.fil")
-sys_com_prune <- paste0(path2plink, " --bfile ", outputdir, "/geno.chr3.fil", 
-                        " --indep-pairwise 250 50 0.2 --bad-ld --out ",  outputdir, "/geno.chr3.fil.pruned")
-sys_com_king <- paste0(path2plink, " --bfile ", outputdir, "/geno.chr3.fil", 
-                       "  --extract ", outputdir, "/geno.chr3.fil.pruned.prune.in", 
-                       "--make-king square --out ", outputdir, "/king_ibd")
-
-system(sys_com_filter)
-system(sys_com_prune)
-system(sys_com_king)
-
-kin_mat <- read.table(paste0(outputdir, "/king_ibd", ".king"))
-kin_ids <- read.table(paste0(outputdir,"/king_ibd.id"))
+kin_mat <- read.table(kin_mat_name)
+kin_ids <- read.table(kid_ids_name)
 
 double_kin_mat <- kin_mat * 2
 
-samplemap$geno_name
-
-colnames(double_kin_mat) <- samplemap$geno_name
-cbind("sample_id" = samplemap$geno_name,
+colnames(double_kin_mat) <- kin_ids$V1
+cbind("sample_id" = kin_ids$V1,
       double_kin_mat)
 
 write.table(double_kin_mat, file = paste0(outputdir,"kinship.txt"),
