@@ -20,7 +20,8 @@ library(tidyverse)
 
 option_list <- list(
   make_option("--vcf", type="character"),
-  make_option("--vcf_kin", type="character"),
+  make_option("--kinmat", type="character"),
+  make_option("--kinids", type="character"),
   make_option("--effect_size", type="double"),
   make_option("--samp_n", type="integer"),
   make_option("--cell_count", type="integer"),
