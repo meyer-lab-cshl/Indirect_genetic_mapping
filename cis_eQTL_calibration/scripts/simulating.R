@@ -48,7 +48,7 @@ path2plink <- "plink2"
 path2ancids <- "../RESHAPE_geno_sim/ids/"
 outputdir <- paste0("intermed_data/", "sim_geno", as.character(effect_size),"_sample",
   as.character(samp_n), "_cell", as.character(cell_count), "_rep",
-  as.character(rep)) 
+  as.character(rep), "_rand", as.character(opt$rand)) 
 #using parameter changes from the splatpop paper simulations github repo
 eqtl_params <- setParams(eqtl_params,  
                          similarity.scale = 1.5,
@@ -85,8 +85,11 @@ sim.sc <- splatPopSimulateSC(
 )
 print("key made")
 #saving the key
-saveRDS(sim.means$key, file = paste0(outputdir,"/key.rds"))
-
+keyfilename = paste0(outputdir,"/key.rds")
+saveRDS(sim.means, file = keyfilename)
+print("saved key")
+print(keyfilename)
+print(head(sim.means$key))
 ###writing the files in the correct format for limix qtl####
 #####phenotype file#####
 #normalizing counts
@@ -100,7 +103,7 @@ pseudobulk <- aggregateAcrossCells(sim.sc,
 pheno_dataframe <- cbind(data.frame("feature_id" = rownames(pseudobulk)),
                          data.frame(assay(pseudobulk)))
 
-write.table(pheno_dataframe, file = paste0(outputdir, "/sim_phenotype.txt"),
+write.table(pheno_dataframe, file = paste0(outputdir, "/pheno.txt"),
             quote = FALSE, sep = "\t", row.names = FALSE, col.names = TRUE)
 
 #covariate file
@@ -113,21 +116,21 @@ sample_names <- colnames(pseudobulk)
 samplemap <- data.frame(geno_names = sample_names,
                         pheno_names = sample_names)
 
-write.table(samplemap, file = paste0(outputdir,"/bulksim_sample_map.txt"),
+write.table(samplemap, file = paste0(outputdir,"/sample_map.txt"),
             quote = FALSE, row.names = FALSE, sep = "\t", col.names = FALSE)
 
 #for genetics files
-temporary <- tempdir()
-writeVcf(vcf_obj, filename = paste(temporary, vcf_name, sep = "/"), 
-         index = TRUE) 
+vcfnewname = paste0(outputdir, "/vcf_to_plink.vcf")
+writeVcf(vcf, filename = vcfnewname, 
+         index = FALSE)
 
-sys_com <- paste0(path2plink, " --vcf ", temporary, "/", vcf_name, 
-                  " --make-bed --out ", outputdir, "/geno")
+sys_com <- paste0(path2plink, " --vcf ", vcfnewname, 
+                  " --vcf-half-call m --make-bed --out ", outputdir, "/geno")
 system(sys_com)
 
 ##kinship file
 kin_mat <- read.table(kin_mat_name)
-kin_ids <- read.table(kid_ids_name, header = TRUE,
+kin_ids <- read.table(kin_ids_name, header = TRUE,
                       col.names = c("FID", "IID"))
 
 double_kin_mat <- kin_mat * 2

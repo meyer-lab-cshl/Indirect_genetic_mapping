@@ -19,7 +19,7 @@ replicates = [1]
 ancestry = ["amr", "afr", "csa", "eas", "eur"]
 
 #annotation file
-annot_file = "annot_chr2_onlygenesinrange.txt" 
+annot_file = "final_annot_chr2_onlygenesinrange.txt"
 
 #gff file 
 gff_file = "gff_chr2_onlygenesinrange.txt"
@@ -40,11 +40,11 @@ rule all:
         "results/summary_results.tsv",
         expand("results/{setup.effect_size}_sample{setup.samp_n}_cell{setup.cell_count}_rep{setup.rep}_rand{setup.rand_seed}/qtl_stats.txt", 
              setup = setup.itertuples())
-             
+
 rule sample_ids:
     input:
         samples = "../RESHAPE_geno_sim/ids/{anc}_ids.txt"
-    output: 
+    output:
         randsamples = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/{anc}_sample_ids.txt"
     params:
         intermed = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}",
@@ -70,8 +70,9 @@ rule filter_samples:
             rep=wc.rep,
             rand_seed=wc.rand_seed),
         eQTLgenome = "../RESHAPE_geno_sim/sim/sim_chr2_all.vcf.gz",
+        kinplinks = "../RESHAPE_geno_sim/sim/kin_LOCO.pruned.bed"
     params:
-        kinname = "../RESHAPE_geno_sim/sim/kin_LOCO.pruned"
+        kinname = "../RESHAPE_geno_sim/sim/kin_LOCO.pruned",
         kinout = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/LOCO_kinship_samplefilter"
     output:
         all_samples = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/allsample_list.txt"),
@@ -108,15 +109,15 @@ rule filter_qc_genomes:
 rule sim_exp:
     input:
         sim_vcf = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/sim_chr2_samplefilter_markerqc.vcf.gz",
-        kinship_id = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/LOCO_kinship_samplefilter.king.id",
-        kinship_king = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/LOCO_kinship_samplefilter.king"
+        kinids = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/LOCO_kinship_samplefilter.king.id",
+        kinmatrix = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/LOCO_kinship_samplefilter.king"
     output:
-        pheno_file = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/pheno.txt"),
-        covar = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/covar.txt"),
-        kinship = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/kinship.txt"),
-        sample_map = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/sample_map.txt"),
-        key = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/key.rds"),
-        annotation= temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/annot.txt")
+        pheno_file = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/pheno.txt",
+        covar = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/covar.txt",
+        kinship = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/kinship.txt",
+        sample_map = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/sample_map.txt",
+        key = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/key.rds",
+        gen = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/geno.bed"
     resources:
         mem_mb = 50000
     params:
@@ -125,7 +126,8 @@ rule sim_exp:
     log:
         "logs/sim_exp/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}.log"
     shell:
-        """Rscript scripts/simulating.R \
+        """
+          Rscript scripts/simulating.R \
             --vcf {input.sim_vcf} \
             --kinmat {input.kinmatrix} \
             --kinids {input.kinids} \
@@ -149,8 +151,8 @@ FDR = '0.05'
 
 rule generate_chunks:
     input:
-        annotation="intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/annot.txt",
-        pheno_file= "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/pheno.txt", 
+        annotation = annot_file,
+        pheno_file = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/pheno.txt"
     output:
         chunks="results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}" + "/chunks.txt"
     log:
@@ -251,7 +253,8 @@ rule aggregate_qtl_results:
 
 rule determine_results:
     input:
-        results = "results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/qtl_results_all.txt",
+        results = "results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/qtl_results_all.txt"
+    params:
         key = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/key.rds"
     output:
         "results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/qtl_stats.txt"
@@ -262,7 +265,7 @@ rule determine_results:
     shell:
         """
         Rscript scripts/summarizing_results.R \
-            --key {input.key} \
+            --key {params.key} \
             --results {input.results} \
             --effect_size {wildcards.effect_size} \
             --samp_n {wildcards.samp_n} \
