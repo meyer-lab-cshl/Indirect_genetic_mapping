@@ -11,15 +11,15 @@ random.seed(522)
 #cell_numbers = [50, 100, 500, 1000] #removing 1500 and 250
 #replicates = [1, 2, 3]
 
-effects = [1.25] #removed 1
-samp_numbers = [100] #removed 125 and 50
-cell_numbers = [500] #removing 1500 and 250
-replicates = [1]
+effects = [0.75, 1.25] #removed 1
+samp_numbers = [75, 100] #removed 125 and 50
+cell_numbers = [50, 500, 1000] #removing 1500 and 250
+replicates = [1, 2, 3]
 
 ancestry = ["amr", "afr", "csa", "eas", "eur"]
 
 #annotation file
-annot_file = "final_annot_chr2_onlygenesinrange.txt"
+annot_file = "final_annot_2_onlygenesinrange.txt"
 
 #gff file 
 gff_file = "gff_chr2_onlygenesinrange.txt"
@@ -35,10 +35,14 @@ for effect in effects:
                 row = pd.DataFrame([row])
                 setup = pd.concat([setup, row])
 
+def extendChunk(chunk):
+    chunkSplitted = chunk.split("_")
+    return chunkSplitted[0]+":"+chunkSplitted[1]+"-"+chunkSplitted[2]
+
 rule all:
     input:
         "results/summary_results.tsv",
-        expand("results/{setup.effect_size}_sample{setup.samp_n}_cell{setup.cell_count}_rep{setup.rep}_rand{setup.rand_seed}/qtl_stats.txt", 
+        expand("results/{setup.effect_size}_sample{setup.samp_n}_cell{setup.cell_count}_rep{setup.rep}_rand{setup.rand_seed}/qtl_results_all.txt",
              setup = setup.itertuples())
 
 rule sample_ids:
@@ -136,13 +140,14 @@ rule sim_exp:
             --cell_count {wildcards.cell_count} \
             --rep {wildcards.rep} \
             --gff {params.gff} \
-            --eqtl_param {params.eqtl_params} --rand {wildcards.rand_seed}"""
+            --eqtl_param {params.eqtl_params} --rand {wildcards.rand_seed}
+          rm intermed_data/sim_geno{wildcards.effect_size}_sample{wildcards.samp_n}_cell{wildcards.cell_count}_rep{wildcards.rep}_rand{wildcards.rand_seed}/vcf_to_plink.vcf"""
 
 #snakemake rules from limix qtl 
 ## Settings
 nGenes = 50 # recommend to set to 50; 5 used here for toy dataset
 startPos = 0
-endOffset = 1000000000
+endOffset = 2000000
 numberOfPermutations = '1000'
 minorAlleleFrequency = '0.1'
 windowSize = '1000000'
@@ -184,7 +189,7 @@ checkpoint setup_chunk_analysis:
 rule run_qtl_mapping:
     input:
         chunkinfo = "results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}" + "/chunks/{chunk}_info",
-        af = annot_file,
+        af = "final_annot_2_onlygenesinrange.txt",
         pf = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/pheno.txt",
         cf = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/covar.txt",
         kf = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/kinship.txt",

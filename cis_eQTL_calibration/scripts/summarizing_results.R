@@ -1,6 +1,6 @@
-log <- file(snakemake@log[[1]], open="wt")
-sink(log)
-sink(log, type="message")
+#log <- file(snakemake@log[[1]], open="wt")
+#sink(log)
+#sink(log, type="message")
 
 ##code to determine the number of TP, FP, TN, FN
 
@@ -15,6 +15,8 @@ sink(log, type="message")
 #####Libraries#####
 library(optparse)
 library(qvalue)
+library(tidyverse)
+library(data.table)
 
 #####Variable loading#####
 option_list <- list(
@@ -23,14 +25,14 @@ option_list <- list(
   make_option("--effect_size", type="double"),
   make_option("--samp_n", type="integer"),
   make_option("--cell_count", type="integer"),
-  make_option("--rep", type="integer"),
+  make_option("--rep", type="integer")
 )
 
 opt <- parse_args(OptionParser(option_list=option_list))
 
-outputfile <= "results/" + as.character(effect_size)+ "_sample" + 
-  as.character(samp_n) + "_cell" + as.character(cell_count) + "_rep" +
-  as.character(rep) + "/qtl_stats.txt"
+outputfile <- paste0("results/", as.character(opt$effect_size), "_sample",
+  as.character(opt$samp_n), "_cell", as.character(opt$cell_count), "_rep",
+  as.character(opt$rep), "/qtl_stats.txt")
 
 #first going to bring the egenes into positive and negative
 key_name <- opt$key
@@ -41,8 +43,7 @@ results_name <- opt$results
 #first, going to add a column with the adjusted p value to the qtl result table
 #filter out all rows that don't have pvalue below the threshold
 #get unique of the genes to see all the genes with simulated 
-results <- read.table(results_name,
-                             header = TRUE)
+results <- data.table::fread(results_name)
 results$qval <- qvalue(results$p_value)$qvalue
 sig_results <- results[results$qval <= 0.05, ]
 sig_egenes <- unique(sig_results$feature_id)
@@ -69,7 +70,7 @@ stats_count <- table(stats_results)
 
 #getting beta correlation values
 key$gene_name <- rownames(key)
-key_sub <- key[!(is.na(key$eSNP.ID)), c("gene_name", "eSNP.ID", "eQTL.EffectSize")]
+key_sub <- key[!(is.na(key$'eSNP.ID')), c("gene_name", "eSNP.ID", "eQTL.EffectSize")]
 result_sub <- results[,c("feature_id", "snp_id", "beta")]
 
 merged_df <- merge(key_sub, 
