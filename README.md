@@ -7,6 +7,11 @@ To characterize genetic variants that are involved in changing the interaction b
 After validating the power and calibration of the model, I worked on extending the framework to include a term for a test statistic to model the impact of an upstream cell type to a downstream cell typoe. 
 
 
-## Data Workflow
+## Project Workflow
+### Conventional eQTL model benchmarking
+To benchmark the results of the conventional eQTL model, I used RESHAPE to create a synthetic genetic reference dataset from a public genetic dataset. Then, I inputted the synthetic genetic reference data into splatPop to generate simulated gene expression data with known eQTLs. I inputted a range of parameters from reviewing relevant biological literature to determine the cell size, sample size, and eQTL effect sizes. Then, I used the eQTL mapping software limixQTL to map eQTLs.
+<img width="1131" height="407" alt="method_flowchart" src="https://github.com/user-attachments/assets/7e844f35-fc48-4f8e-89fe-8ff5895a07e4" />
+
+### Simulated Indirect Genetic Effects
 
 ## Files Included in Repository
