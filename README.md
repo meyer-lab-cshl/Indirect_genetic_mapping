@@ -29,3 +29,13 @@ see how well it could recover the indirect effects under each hypothesis.
 Both of these projects are implemented as Snakemake pipelines to ensure reproducibility, quality, and easily extensible. 
 
 ## Files Included in Repository
+The repository is organized as three Snakemake pipelines that are meant to be run in
+sequence:
+
+1. `RESHAPE_sim/` — simulate population-scale genotypes per ancestry.
+2. `conventional_eQTL_benchmark/` — benchmark a standard single-cell eQTL
+   pipeline on those genotypes.
+3. `simulating_indirect/` — simulate paired cell-type expression (cell type A
+   driving cell type B) and map both direct eQTLs (in A) and indirect eQTLs
+   (in B) using a molecular-risk-score covariate.
+
