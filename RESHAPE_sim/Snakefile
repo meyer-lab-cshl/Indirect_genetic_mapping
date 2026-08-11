@@ -1,0 +1,109 @@
+import pandas as pd
+
+anc = ["afr", "amr", "csa", "eas", "eur"]
+#chroms = [1,6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
+#chroms = [1, 9, 10, 11, 21, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22]
+chroms = [3]
+
+rule all:
+    input:
+        expand("sim/LOCO_mergedchr{chroms}.vcf.gz", chroms = chroms)
+
+
+rule download:
+    output:
+        temp("intermed/gnomad.genomes.v3.1.2.hgdp_tgp.chr{chroms}.vcf.bgz")
+    shell:
+        """
+        gsutil cp gs://gcp-public-data--gnomad/release/3.1.2/vcf/genomes/gnomad.genomes.v3.1.2.hgdp_tgp.chr{wildcards.chroms}.vcf.bgz intermed/
+        """
+
+rule filter_ancestries:
+    input: 
+        vcf="intermed/gnomad.genomes.v3.1.2.hgdp_tgp.chr{chroms}.vcf.bgz",
+        ids="ids/{anc}_ids.txt"
+    threads: 6
+    resources:
+        mem_mb = 10000
+    output:
+        temp("intermed/{anc}_chr{chroms}.vcf")
+    shell:
+        "bcftools view --threads {threads} --samples-file {input.ids} {input.vcf} | bcftools view -m2 -M2 -Ov -o {output}" 
+
+
+rule simulate_genomes:
+    input:
+        "intermed/{anc}_chr{chroms}.vcf"
+    output:
+        temp("sim/sim_{anc}_chr{chroms}.vcf")
+    resources:
+        mem_mb = 10000
+    params:
+        chr = "{chroms}"
+    shell:
+        """
+        ./haploshuffling_static --vcf {input} --region {params.chr} --output {output} --map RESHAPE-main/maps/genetic_maps.b38/chr{params.chr}.b38.gmap.gz --seed 13524 --gen 15
+        """
+
+rule qc_filter:
+    input:
+        vcf = "sim/sim_{anc}_chr{chroms}.vcf",
+    output:
+        zipvcf = temp("sim/simfil_{anc}_chr{chroms}.vcf.gz")
+    resources:
+        mem_mb = 10000
+    shell:
+        """
+        vcftools --vcf {input.vcf} --maf 0.05 --hwe 0.001 --max-missing 0.95 --recode --recode-INFO-all --stdout | bgzip -c > {output.zipvcf}
+        tabix -p vcf {output.zipvcf}
+        """
+
+rule merge_genomes:
+    input: 
+        vcfs = lambda wildcards: expand(
+            "sim/simfil_{anc}_chr{chroms}.vcf.gz",
+            anc=anc,
+            chroms=wildcards.chroms
+        )
+    output:
+        merge = "sim/LOCO_mergedchr{chroms}.vcf.gz"
+    resources:
+        mem_mb = 10000
+    threads: 4
+    shell:
+        """
+        bcftools merge --threads {threads} {input.vcfs} -O z -o {output.merge}
+        """
+
+#rule to convert
+rule plink_convert:
+    input: 
+        vcfs = "sim/LOCO_merged.vcf.gz"
+    output:
+        plinkbed = temp("sim/LOCO_merged.bed"),
+        plinkbim = temp("sim/LOCO_merged.bim"),
+        plinkfam = temp("sim/LOCO_merged.fam")
+    params:
+        filename = "LOCO_merged" 
+    resources:
+        mem_mb = 10000
+    shell:
+        """
+        plink --vcf {input.vcfs} --maf 0.05 --hwe 1e-6 --make-bed --out {params.filename}
+        """
+
+rule plink_prune:
+    input: 
+        plinks = "sim/LOCO_merged.bed"
+    output:
+        pruned = "sim/LOCO_merged.pruned.bed"
+    params:
+        filename = "LOCO_merged",
+        highLD = "../../../aim1/merged_dataset/high-LD-regions-hg38-GRCh38.txt"
+    resources:
+        mem_mb = 10000
+    shell:
+        """
+        plink2 --bfile {params.filename} --indep-pairwise 250 50 0.2 --bad-ld --out {params.filename}
+        plink2 --bfile {params.filename} --extract {params.filename}.prune.in --out {params.filename}.pruned
+        """

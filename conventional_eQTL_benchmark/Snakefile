@@ -1,0 +1,313 @@
+import pandas as pd
+import random
+import sys
+
+import os
+from snakemake.io import glob_wildcards
+random.seed(522)
+
+#effects = [0, 1, 2] #removed 1
+#samp_numbers = [75, 100] #removed 125 and 50
+#cell_numbers = [50, 100, 500, 1000] #removing 1500 and 250
+#replicates = [1, 2, 3]
+
+#effects = [0, 1, 2] #removed 1
+#samp_numbers = [75, 100] #removed 125 and 50
+#cell_numbers = [50, 500, 1000] #removing 1500 and 250
+#replicates = [1, 2, 3]
+
+effects = [3]
+samp_numbers = [80]
+cell_numbers = [500]
+replicates = [1]
+
+ancestry = ["eur"]
+
+#annotation file
+annot_file = "final_annot_2_onlygenesinrange.txt"
+
+#gff file 
+gff_file = "gff_chr2_onlygenesinrange.txt"
+eqtl_params = "params_smartseq_use.rds"
+
+setup = pd.DataFrame(columns = ['effect_size', 'samp_n', 'cell_count', 'rep', 'rand_seed'])
+for effect in effects:
+    for sam in samp_numbers:
+        for cell in cell_numbers:
+            for replicate in replicates:
+                rand = random.randint(1, 1000)
+                row = {'effect_size':effect, 'samp_n':sam, 'cell_count':cell, 'rep':replicate, 'rand_seed':rand}
+                row = pd.DataFrame([row])
+                setup = pd.concat([setup, row])
+
+def extendChunk(chunk):
+    chunkSplitted = chunk.split("_")
+    return chunkSplitted[0]+":"+chunkSplitted[1]+"-"+chunkSplitted[2]
+
+rule all:
+    input:
+        "results/summary_results.tsv",
+        expand("results/{setup.effect_size}_sample{setup.samp_n}_cell{setup.cell_count}_rep{setup.rep}_rand{setup.rand_seed}/qtl_results_all.txt",
+             setup = setup.itertuples())
+
+rule sample_ids:
+    input:
+        samples = "../RESHAPE_geno_sim/ids/eur_ids.txt"
+    output:
+        randsamples = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/eur_sample_ids.txt"
+    params:
+        intermed = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}"
+    resources:
+        mem_mb = 1000
+    shell:
+        """
+        mkdir -p {params.intermed}
+        shuf {input.samples} \
+        --random-source=<(python3 -c "import random, sys; random.seed({wildcards.rand_seed}); sys.stdout.buffer.write(random.randbytes(1000000))") \
+        | head -n {wildcards.samp_n} > {output.randsamples}
+        """
+
+rule filter_samples:
+    input:
+        sample_list = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/eur_sample_ids.txt",
+        eQTLgenome = "../RESHAPE_geno_sim/sim/sim_chr2_all.vcf.gz",
+        kinplinks = "../RESHAPE_geno_sim/sim/kin_LOCO.pruned.bed"
+    params:
+        kinname = "../RESHAPE_geno_sim/sim/kin_LOCO.pruned",
+        kinout = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/LOCO_kinship_samplefilter"
+    output:
+        all_samples = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/allsample_list.txt"),
+        eQTLchr = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/sim_chr2_samplefilter.vcf.gz"),
+        kinmatrix = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/LOCO_kinship_samplefilter.king"),
+        kinid = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/LOCO_kinship_samplefilter.king.id")
+    resources:
+        mem_mb = 10000
+    threads: 8
+    shell:
+        """
+        cat {input.sample_list} > {output.all_samples}
+
+        bcftools view --threads {threads} -r chr2:1-15000000 -S {output.all_samples} {input.eQTLgenome} -Oz -o {output.eQTLchr}
+        bcftools index -t {output.eQTLchr}
+
+        plink2 --bfile {params.kinname} --keep {output.all_samples} --make-king square --out {params.kinout}
+        """
+
+rule filter_qc_genomes:
+    input:
+        eqtlchr = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/sim_chr2_samplefilter.vcf.gz",
+    output:
+        eqtl = temp("intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/sim_chr2_samplefilter_markerqc.vcf.gz"),
+    resources:
+        mem_mb = 10000
+    threads: 8
+    shell:
+        """
+        vcftools --gzvcf {input.eqtlchr} --maf 0.05 --hwe 0.001 --max-missing 0.95 --recode --recode-INFO-all --stdout | bgzip -c > {output.eqtl}
+        tabix -p vcf {output.eqtl}
+        """
+
+rule sim_exp:
+    input:
+        sim_vcf = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/sim_chr2_samplefilter_markerqc.vcf.gz",
+        kinids = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/LOCO_kinship_samplefilter.king.id",
+        kinmatrix = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/LOCO_kinship_samplefilter.king"
+    output:
+        pheno_file = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/pheno.txt",
+        covar = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/covar.txt",
+        kinship = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/kinship.txt",
+        sample_map = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/sample_map.txt",
+        key = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/key.rds",
+        gen = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/geno.bed"
+    resources:
+        mem_mb = 50000
+    params:
+        gff = gff_file,
+        eqtl_params = eqtl_params
+    log:
+        "logs/sim_exp/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}.log"
+    shell:
+        """
+          Rscript scripts/simulating.R \
+            --vcf {input.sim_vcf} \
+            --kinmat {input.kinmatrix} \
+            --kinids {input.kinids} \
+            --effect_size {wildcards.effect_size} \
+            --samp_n {wildcards.samp_n} \
+            --cell_count {wildcards.cell_count} \
+            --rep {wildcards.rep} \
+            --gff {params.gff} \
+            --eqtl_param {params.eqtl_params} --rand {wildcards.rand_seed}
+          rm intermed_data/sim_geno{wildcards.effect_size}_sample{wildcards.samp_n}_cell{wildcards.cell_count}_rep{wildcards.rep}_rand{wildcards.rand_seed}/vcf_to_plink.vcf"""
+
+#snakemake rules from limix qtl 
+## Settings
+nGenes = 50 # recommend to set to 50; 5 used here for toy dataset
+startPos = 0
+endOffset = 2000000
+numberOfPermutations = '1000'
+minorAlleleFrequency = '0.1'
+windowSize = '1000000'
+hwequilibrium = '0.000001'
+FDR = '0.05'
+
+rule generate_chunks:
+    input:
+        annotation = annot_file,
+        pheno_file = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/pheno.txt"
+    output:
+        chunks="results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}" + "/chunks.txt"
+    log:
+        "logs/generate_chunks/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}.log"
+    resources:
+        mem_mb = 1000
+    params:
+        nGenes = nGenes,
+        startPos = startPos,
+        endOffset = endOffset
+    script:
+        "Limix_QTL/scripts/generate_chunks.R"
+
+checkpoint setup_chunk_analysis:
+    input:
+        chunks= "results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}" + "/chunks.txt"
+    output:
+        directory("results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}" + "/chunks")
+    resources:
+        mem_mb = 5000
+    shell:
+        """
+        mkdir {output}
+        for chunk in $(cat {input.chunks}); do
+            echo $chunk > {output}/${{chunk//[:-]/_}}_info
+        done
+        """
+
+rule run_qtl_mapping:
+    input:
+        chunkinfo = "results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}" + "/chunks/{chunk}_info",
+        af = "final_annot_2_onlygenesinrange.txt",
+        pf = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/pheno.txt",
+        cf = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/covar.txt",
+        kf = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/kinship.txt",
+        smf = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/sample_map.txt",
+        gen = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/geno.bed"
+    output:
+        "results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}" + "/chunks/qtl_results_{chunk}.h5"
+    log:
+        "logs/run_qtl_mapping/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}_{chunk}.log"
+    resources:
+        mem_mb = 20000
+    params:
+        chunkstr=lambda wildcards: extendChunk(wildcards.chunk),
+        od = "results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}" + "/chunks",
+        np = numberOfPermutations,
+        maf = minorAlleleFrequency,
+        hwe = hwequilibrium,
+        w = windowSize,
+    wildcard_constraints:
+        chunk="\d{1,2}_\d*_\d*"
+    shell:
+        """
+        #singularity exec --bind ~ ~/limix.simg python /limix_qtl/Limix_QTL/run_QTL_analysis.py
+        python Limix_QTL/run_QTL_analysis.py \
+            --plink {input.gen} \
+            -af {input.af} \
+            -pf {input.pf} \
+            -cf {input.cf} \
+            -od {params.od} \
+            -rf {input.kf} \
+            --sample_mapping_file {input.smf} \
+            -gr {params.chunkstr} \
+            -np {params.np} \
+            -maf {params.maf} \
+            -hwe {params.hwe} \
+            -w {params.w} \
+            -c -gm gaussnorm -bs 500 -rs 0.95
+        """
+
+def collect_qtl_result_files(wildcards):
+    checkpoint_output = checkpoints.setup_chunk_analysis.get(**wildcards).output[0]
+    wc=glob_wildcards(os.path.join(checkpoint_output, "{chunk}_info"))
+    return expand(checkpoint_output + "/qtl_results_{chunk}.h5",
+            chunk=wc.chunk)
+
+rule aggregate_qtl_results:
+    input:
+        collect_qtl_result_files,
+    output:
+        "results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/qtl_results_all.txt"
+    log:
+        "logs/aggregate_qtl_results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}.log"
+    resources:
+        mem_mb = 10000
+    params:
+        IF = "results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}" + "/chunks",
+        OF = "results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}" + "/"
+    shell:
+        """
+        #singularity exec --bind ~ ~/limix.simg python /limix_qtl/Limix_QTL/post-processing_QTL/minimal_postprocess.py
+        python Limix_QTL/post_processing/minimal_postprocess.py \
+            -id {params.IF} \
+            -od {params.OF} \
+            -sfo
+        """
+
+rule determine_results:
+    input:
+        results = "results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/qtl_results_all.txt"
+    params:
+        key = "intermed_data/sim_geno{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/key.rds"
+    output:
+        "results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}/qtl_stats.txt"
+    log:
+        "logs/determine_results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}_rand{rand_seed}.log"
+    resources:
+        mem_mb = 3000
+    shell:
+        """
+        Rscript scripts/summarizing_results.R \
+            --key {params.key} \
+            --results {input.results} \
+            --effect_size {wildcards.effect_size} \
+            --samp_n {wildcards.samp_n} \
+            --cell_count {wildcards.cell_count} \
+            --rep {wildcards.rep} \
+            --rand {wildcards.rand_seed}
+        """
+
+rule agg_results:
+    input:
+        expand("results/{setup.effect_size}_sample{setup.samp_n}_cell{setup.cell_count}_rep{setup.rep}_rand{setup.rand_seed}/qtl_stats.txt",
+        setup = setup.itertuples())
+    output:
+        "results/summary_results.tsv"
+    resources:
+        mem_mb = 3000
+    log:
+        "logs/agg_results/agg_results.log"
+    script:
+        "scripts/agg_results.py"
+
+
+         
+#old stuff - not needed
+#rule top_feature:
+#    input:
+#        finalFile = "results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}/qtl_results_all.txt"
+#    output:
+#        "results/{effect_size}_sample{samp_n}_cell{cell_count}_rep{rep}/top_qtl_results_all.txt"
+#    params:
+#        IF = "results/{wildcards.effect_size}_sample{wildcards.samp_n}_cell{wildcards.cell_count}_rep{wildcards.rep}" + "/chunks",
+#        OF = "results/{wildcards.effect_size}_sample{wildcards.samp_n}_cell{wildcards.cell_count}_rep{wildcards.rep}" + "/"
+#    shell:
+#        """
+#        #singularity exec --bind ~ ~/limix.simg python /limix_qtl/Limix_QTL/post-processing_QTL/minimal_postprocess.py
+#        python Limix_QTL/post_processing/minimal_postprocess.py \
+#            -id {params.IF} \
+#            -od {params.OF} \
+#            -tfb \
+#            -sfo
+#        """
+
+ 
